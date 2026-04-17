@@ -19,6 +19,9 @@ const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
 const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
 const isMain = process.env.NANOCLAW_IS_MAIN === '1';
+const senderPhone = process.env.NANOCLAW_SENDER_PHONE || '';
+const ownerPhone = process.env.NANOCLAW_OWNER_PHONE || '';
+const isOwner = !ownerPhone || senderPhone === ownerPhone;
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -479,6 +482,17 @@ Use available_groups.json to find the JID for a group. The folder name must be c
         isError: true,
       };
     }
+    if (!isOwner) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Unauthorized: register_group is restricted to the owner.',
+          },
+        ],
+        isError: true,
+      };
+    }
 
     const data = {
       type: 'register_group',
@@ -499,6 +513,47 @@ Use available_groups.json to find the JID for a group. The folder name must be c
           text: `Group "${args.name}" registered. It will start receiving messages immediately.`,
         },
       ],
+    };
+  },
+);
+
+server.tool(
+  'host_exec',
+  `Execute a shell command on the HOST machine (outside the container). Use this to:
+- Build and restart NanoClaw (npm run build, systemctl --user restart nanoclaw)
+- Rebuild the agent container (./container/build.sh)
+- Edit files outside /workspace mounts
+- Install system packages or configure the host
+- Run git commands on the host repo
+
+Working directory defaults to /home/micro/nanoclaw. Results include stdout, stderr, and exit code.
+Only available in the main group.`,
+  {
+    command: z.string().describe('Shell command to run on the host (bash -c)'),
+    cwd: z.string().optional().describe('Working directory on the host (default: /home/micro/nanoclaw)'),
+    timeout: z.number().optional().describe('Timeout in milliseconds (default: 30000, max: 120000)'),
+  },
+  async (args) => {
+    if (!isMain) {
+      return { content: [{ type: 'text' as const, text: 'host_exec is only available in the main group.' }], isError: true };
+    }
+    if (!isOwner) {
+      return { content: [{ type: 'text' as const, text: 'Unauthorized: host_exec is restricted to the owner.' }], isError: true };
+    }
+
+    const { hostExec } = await import('./host-exec.js');
+    const result = await hostExec(args.command, { cwd: args.cwd, timeout: args.timeout });
+
+    const text = [
+      result.stdout && `stdout:\n${result.stdout}`,
+      result.stderr && `stderr:\n${result.stderr}`,
+      `exit code: ${result.exitCode}`,
+      result.error && `error: ${result.error}`,
+    ].filter(Boolean).join('\n\n');
+
+    return {
+      content: [{ type: 'text' as const, text: text || '(no output)' }],
+      isError: result.exitCode !== 0,
     };
   },
 );

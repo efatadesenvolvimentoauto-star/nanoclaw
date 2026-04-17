@@ -9,14 +9,17 @@ store/
 data/
 logs/
 
-# Groups - only track base structure and specific CLAUDE.md files
+# Groups - track global memory, ignore per-chat runtime data
 groups/*
 !groups/main/
 !groups/global/
 groups/main/*
-groups/global/*
 !groups/main/CLAUDE.md
-!groups/global/CLAUDE.md
+groups/global/*
+!groups/global/*.md
+!groups/global/members/
+groups/global/members/*
+!groups/global/members/*.md
 
 # Secrets
 *.keys.json

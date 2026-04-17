@@ -6,6 +6,7 @@ import {
   makeWASocket,
   Browsers,
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestWaWebVersion,
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
@@ -23,7 +24,12 @@ const { proto } = createRequire(import.meta.url)('@whiskeysockets/baileys') as {
   proto: typeof ProtoTypes;
 };
 
-import { ASSISTANT_HAS_OWN_NUMBER, ASSISTANT_NAME, STORE_DIR } from '../config.js';
+import {
+  ASSISTANT_HAS_OWN_NUMBER,
+  ASSISTANT_NAME,
+  GROUPS_DIR,
+  STORE_DIR,
+} from '../config.js';
 import {
   getLastGroupSync,
   getMessageContentById,
@@ -93,7 +99,10 @@ export class WhatsAppChannel implements Channel {
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
     const { version } = await fetchLatestWaWebVersion({}).catch((err) => {
-      logger.warn({ err }, 'Failed to fetch latest WA Web version, using default');
+      logger.warn(
+        { err },
+        'Failed to fetch latest WA Web version, using default',
+      );
       return { version: undefined };
     });
     this.sock = makeWASocket({
@@ -151,9 +160,18 @@ export class WhatsAppChannel implements Channel {
 
       if (connection === 'close') {
         this.connected = false;
-        const reason = (lastDisconnect?.error as { output?: { statusCode?: number } })?.output?.statusCode;
+        const reason = (
+          lastDisconnect?.error as { output?: { statusCode?: number } }
+        )?.output?.statusCode;
         const shouldReconnect = reason !== DisconnectReason.loggedOut;
-        logger.info({ reason, shouldReconnect, queuedMessages: this.outgoingQueue.length }, 'Connection closed');
+        logger.info(
+          {
+            reason,
+            shouldReconnect,
+            queuedMessages: this.outgoingQueue.length,
+          },
+          'Connection closed',
+        );
 
         if (shouldReconnect) {
           logger.info('Reconnecting...');
@@ -213,12 +231,15 @@ export class WhatsAppChannel implements Channel {
 
     this.sock.ev.on('creds.update', saveCreds);
 
-    (this.sock.ev as any).on('chats.phoneNumberShare', ({ lid, jid }: { lid?: string; jid?: string }) => {
-      const lidUser = lid?.split('@')[0].split(':')[0];
-      if (lidUser && jid) {
-        this.setLidPhoneMapping(lidUser, jid);
-      }
-    });
+    (this.sock.ev as any).on(
+      'chats.phoneNumberShare',
+      ({ lid, jid }: { lid?: string; jid?: string }) => {
+        const lidUser = lid?.split('@')[0].split(':')[0];
+        if (lidUser && jid) {
+          this.setLidPhoneMapping(lidUser, jid);
+        }
+      },
+    );
 
     this.sock.ev.on('messages.upsert', async ({ messages }) => {
       for (const msg of messages) {
@@ -228,23 +249,20 @@ export class WhatsAppChannel implements Channel {
         const rawJid = msg.key.remoteJid;
         if (!rawJid || rawJid === 'status@broadcast') continue;
 
-          // Translate LID JID to phone JID if applicable.
-          // Prefer senderPn from the message key (available in newer WA protocol)
-          // since translateJid may fail to resolve LID→phone via signalRepository.
-          let chatJid = await this.translateJid(rawJid);
-          if (chatJid.endsWith('@lid') && (msg.key as any).senderPn) {
-            const pn = (msg.key as any).senderPn as string;
-            const phoneJid = pn.includes('@') ? pn : `${pn}@s.whatsapp.net`;
-            this.setLidPhoneMapping(
-              rawJid.split('@')[0].split(':')[0],
-              phoneJid,
-            );
-            chatJid = phoneJid;
-            logger.info(
-              { lidJid: rawJid, phoneJid },
-              'Translated LID via senderPn',
-            );
-          }
+        // Translate LID JID to phone JID if applicable.
+        // Prefer senderPn from the message key (available in newer WA protocol)
+        // since translateJid may fail to resolve LID→phone via signalRepository.
+        let chatJid = await this.translateJid(rawJid);
+        if (chatJid.endsWith('@lid') && (msg.key as any).senderPn) {
+          const pn = (msg.key as any).senderPn as string;
+          const phoneJid = pn.includes('@') ? pn : `${pn}@s.whatsapp.net`;
+          this.setLidPhoneMapping(rawJid.split('@')[0].split(':')[0], phoneJid);
+          chatJid = phoneJid;
+          logger.info(
+            { lidJid: rawJid, phoneJid },
+            'Translated LID via senderPn',
+          );
+        }
 
         const timestamp = new Date(
           Number(msg.messageTimestamp) * 1000,
@@ -252,29 +270,62 @@ export class WhatsAppChannel implements Channel {
 
         // Always notify about chat metadata for group discovery
         const isGroup = chatJid.endsWith('@g.us');
-        this.opts.onChatMetadata(chatJid, timestamp, undefined, 'whatsapp', isGroup);
+        this.opts.onChatMetadata(
+          chatJid,
+          timestamp,
+          undefined,
+          'whatsapp',
+          isGroup,
+        );
 
-          // Only deliver full message for registered groups
-          const groups = this.opts.registeredGroups();
-          if (groups[chatJid]) {
-            let content =
-              normalized.conversation ||
-              normalized.extendedTextMessage?.text ||
-              normalized.imageMessage?.caption ||
-              normalized.videoMessage?.caption ||
-              '';
+        // Only deliver full message for registered groups
+        const groups = this.opts.registeredGroups();
+        if (groups[chatJid]) {
+          let content =
+            normalized.conversation ||
+            normalized.extendedTextMessage?.text ||
+            normalized.imageMessage?.caption ||
+            normalized.videoMessage?.caption ||
+            '';
 
-            // WhatsApp group mentions use the LID in raw text (e.g. "@80355281346633")
-            // instead of the display name. Normalize to @AssistantName for trigger matching.
-            if (this.botLidUser && content.includes(`@${this.botLidUser}`)) {
-              content = content.replace(
-                `@${this.botLidUser}`,
-                `@${ASSISTANT_NAME}`,
-              );
+          // WhatsApp group mentions use the LID in raw text (e.g. "@80355281346633")
+          // instead of the display name. Normalize to @AssistantName for trigger matching.
+          if (this.botLidUser && content.includes(`@${this.botLidUser}`)) {
+            content = content.replace(
+              `@${this.botLidUser}`,
+              `@${ASSISTANT_NAME}`,
+            );
+          }
+
+          // Download images and save to group workspace for multimodal processing
+          const isImage = !!normalized.imageMessage;
+          if (isImage) {
+            try {
+              const groupEntry = groups[chatJid];
+              if (groupEntry) {
+                const imagesDir = path.join(GROUPS_DIR, groupEntry.folder, 'images');
+                fs.mkdirSync(imagesDir, { recursive: true });
+                const ext = normalized.imageMessage?.mimetype?.split('/')[1]?.split(';')[0] || 'jpg';
+                const filename = `${msg.key.id || Date.now()}.${ext}`;
+                const imgPath = path.join(imagesDir, filename);
+                const buffer = await downloadMediaMessage(msg, 'buffer', {}, {
+                  logger: console as any,
+                  reuploadRequest: this.sock.updateMediaMessage,
+                }) as Buffer;
+                fs.writeFileSync(imgPath, buffer);
+                const containerPath = `/workspace/group/images/${filename}`;
+                content = content
+                  ? `[Image: ${containerPath}]\n${content}`
+                  : `[Image: ${containerPath}]`;
+                logger.info({ chatJid, filename }, 'Image saved for multimodal processing');
+              }
+            } catch (err) {
+              logger.error({ err }, 'Failed to save image');
             }
+          }
 
-            // Skip protocol messages with no text content, but allow voice messages through
-            if (!content && !isVoiceMessage(msg)) continue;
+          // Skip protocol messages with no text content, but allow voice/image messages through
+          if (!content && !isVoiceMessage(msg) && !isImage) continue;
 
           const sender = msg.key.participant || msg.key.remoteJid || '';
           const senderName = msg.pushName || sender.split('@')[0];
@@ -288,29 +339,32 @@ export class WhatsAppChannel implements Channel {
             ? fromMe
             : content.startsWith(`${ASSISTANT_NAME}:`);
 
-            // Transcribe voice messages before storing
-            let finalContent = content;
-            if (isVoiceMessage(msg)) {
-              try {
-                const transcript = await transcribeAudioMessage(msg, this.sock);
-                if (transcript) {
-                  finalContent = `[Voice: ${transcript}]`;
-                  logger.info({ chatJid, length: transcript.length }, 'Transcribed voice message');
-                } else {
-                  finalContent = '[Voice Message - transcription unavailable]';
-                }
-              } catch (err) {
-                logger.error({ err }, 'Voice transcription error');
-                finalContent = '[Voice Message - transcription failed]';
+          // Transcribe voice messages before storing
+          let finalContent = content;
+          if (isVoiceMessage(msg)) {
+            try {
+              const transcript = await transcribeAudioMessage(msg, this.sock);
+              if (transcript) {
+                finalContent = `[Voice: ${transcript}]`;
+                logger.info(
+                  { chatJid, length: transcript.length },
+                  'Transcribed voice message',
+                );
+              } else {
+                finalContent = '[Voice Message - transcription unavailable]';
               }
+            } catch (err) {
+              logger.error({ err }, 'Voice transcription error');
+              finalContent = '[Voice Message - transcription failed]';
             }
+          }
 
-            this.opts.onMessage(chatJid, {
-              id: msg.key.id || '',
-              chat_jid: chatJid,
-              sender,
-              sender_name: senderName,
-              content: finalContent,
+          this.opts.onMessage(chatJid, {
+            id: msg.key.id || '',
+            chat_jid: chatJid,
+            sender,
+            sender_name: senderName,
+            content: finalContent,
             timestamp,
             is_from_me: fromMe,
             is_bot_message: isBotMessage,
@@ -331,7 +385,10 @@ export class WhatsAppChannel implements Channel {
 
     if (!this.connected) {
       this.outgoingQueue.push({ jid, text: prefixed });
-      logger.info({ jid, length: prefixed.length, queueSize: this.outgoingQueue.length }, 'WA disconnected, message queued');
+      logger.info(
+        { jid, length: prefixed.length, queueSize: this.outgoingQueue.length },
+        'WA disconnected, message queued',
+      );
       return;
     }
     try {
@@ -348,7 +405,10 @@ export class WhatsAppChannel implements Channel {
     } catch (err) {
       // If send fails, queue it for retry on reconnect
       this.outgoingQueue.push({ jid, text: prefixed });
-      logger.warn({ jid, err, queueSize: this.outgoingQueue.length }, 'Failed to send, message queued');
+      logger.warn(
+        { jid, err, queueSize: this.outgoingQueue.length },
+        'Failed to send, message queued',
+      );
     }
   }
 
@@ -418,7 +478,10 @@ export class WhatsAppChannel implements Channel {
     // Check local cache first
     const cached = this.lidToPhoneMap[lidUser];
     if (cached) {
-      logger.debug({ lidJid: jid, phoneJid: cached }, 'Translated LID to phone JID (cached)');
+      logger.debug(
+        { lidJid: jid, phoneJid: cached },
+        'Translated LID to phone JID (cached)',
+      );
       return cached;
     }
 
@@ -430,7 +493,10 @@ export class WhatsAppChannel implements Channel {
       if (pn) {
         const phoneJid = `${pn.split('@')[0].split(':')[0]}@s.whatsapp.net`;
         this.setLidPhoneMapping(lidUser, phoneJid);
-        logger.info({ lidJid: jid, phoneJid }, 'Translated LID to phone JID (signalRepository)');
+        logger.info(
+          { lidJid: jid, phoneJid },
+          'Translated LID to phone JID (signalRepository)',
+        );
         return phoneJid;
       }
     } catch (err) {
@@ -487,7 +553,10 @@ export class WhatsAppChannel implements Channel {
     if (this.flushing || this.outgoingQueue.length === 0) return;
     this.flushing = true;
     try {
-      logger.info({ count: this.outgoingQueue.length }, 'Flushing outgoing message queue');
+      logger.info(
+        { count: this.outgoingQueue.length },
+        'Flushing outgoing message queue',
+      );
       while (this.outgoingQueue.length > 0) {
         const item = this.outgoingQueue.shift()!;
         // Send directly — queued items are already prefixed by sendMessage
@@ -495,7 +564,10 @@ export class WhatsAppChannel implements Channel {
         if (sent?.key?.id && sent.message) {
           this.sentMessageCache.set(sent.key.id, sent.message);
         }
-        logger.info({ jid: item.jid, length: item.text.length }, 'Queued message sent');
+        logger.info(
+          { jid: item.jid, length: item.text.length },
+          'Queued message sent',
+        );
       }
     } finally {
       this.flushing = false;
@@ -506,7 +578,9 @@ export class WhatsAppChannel implements Channel {
 registerChannel('whatsapp', (opts: ChannelOpts) => {
   const authDir = path.join(STORE_DIR, 'auth');
   if (!fs.existsSync(path.join(authDir, 'creds.json'))) {
-    logger.warn('WhatsApp: credentials not found. Run /add-whatsapp to authenticate.');
+    logger.warn(
+      'WhatsApp: credentials not found. Run /add-whatsapp to authenticate.',
+    );
     return null;
   }
   return new WhatsAppChannel(opts);

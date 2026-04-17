@@ -22,6 +22,7 @@ import {
   HookCallback,
   PreCompactHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
+import { runGeminiChat } from './gemini-chat.js';
 import { fileURLToPath } from 'url';
 
 interface ContainerInput {
@@ -33,6 +34,8 @@ interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   script?: string;
+  senderPhone?: string;
+  ownerPhone?: string;
 }
 
 interface ContainerOutput {
@@ -471,6 +474,7 @@ async function runQuery(
         'mcp__nanoclaw__*',
       ],
       env: sdkEnv,
+      model: 'claude-sonnet-4-6',
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
       settingSources: ['project', 'user'],
@@ -482,6 +486,8 @@ async function runQuery(
             NANOCLAW_CHAT_JID: containerInput.chatJid,
             NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            NANOCLAW_SENDER_PHONE: containerInput.senderPhone || '',
+            NANOCLAW_OWNER_PHONE: containerInput.ownerPhone || '',
           },
         },
       },
@@ -600,6 +606,20 @@ async function runScript(script: string): Promise<ScriptResult | null> {
   });
 }
 
+// ─── Auto model routing ───────────────────────────────────────────────────────
+
+const MEMORY_PATTERNS =
+  /\b(lembra|lembre|anota|anote|memoriza|aprende|aprenda|save that|remember that|note that|keep in mind)\b|\b(meu nome[eé]|me chamo|eu sou|eu trabalho|eu gosto de|eu prefiro|eu odeio|minha empresa|meu projeto|sempre que eu|toda vez que)\b/i;
+
+const TASK_PATTERNS =
+  /\b(cria[r]?|edita[r]?|escreve[r]?|modifica[r]?|instala[r]?|executa[r]?|roda[r]?|configura[r]?|implementa[r]?|desenvolve[r]?|deploy|build|compila[r]?)\b|\b(pesquisa[r]?|busca[r]?|search|fetch|acessa[r]?)\b|\b(arquivo|file|pasta|diretório|directory|código|code|script|skill|git|commit|push|pull|ssh|vps|servidor|server|docker|npm|node|bash|terminal|cli)\b|https?:\/\//i;
+
+function needsClaude(text: string): boolean {
+  return MEMORY_PATTERNS.test(text) || TASK_PATTERNS.test(text);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function main(): Promise<void> {
   let containerInput: ContainerInput;
 
@@ -672,6 +692,29 @@ async function main(): Promise<void> {
     // Script says wake agent — enrich prompt with script data
     log(`Script wakeAgent=true, enriching prompt with data`);
     prompt = `[SCHEDULED TASK]\n\nScript output:\n${JSON.stringify(scriptResult.data, null, 2)}\n\nInstructions:\n${containerInput.prompt}`;
+  }
+
+  // DEV MASTER: only the owner phone can use Claude (host_exec, complex tasks)
+  const ownerPhone = containerInput.ownerPhone || '';
+  const senderPhone = containerInput.senderPhone || '';
+  const isOwner = !ownerPhone || senderPhone === ownerPhone;
+
+  // Gemini loop: non-owners are always handled by Gemini (no Claude escalation)
+  if (!containerInput.isScheduledTask && process.env.GEMINI_API_KEY && (!needsClaude(prompt) || !isOwner)) {
+    log(`Routing to Gemini (${isOwner ? 'simple chat' : 'non-owner'})`);
+    let geminiPrompt = prompt;
+    while (true) {
+      const reply = await runGeminiChat(geminiPrompt, containerInput.assistantName);
+      writeOutput({ status: 'success', result: reply });
+      const next = await waitForIpcMessage();
+      if (next === null) return;
+      if (isOwner && needsClaude(next)) {
+        prompt = next;
+        break;
+      }
+      geminiPrompt = next;
+    }
+    if (isOwner) log('Escalating from Gemini to Claude');
   }
 
   // Query loop: run query → wait for IPC message → run new query → repeat

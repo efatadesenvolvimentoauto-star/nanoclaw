@@ -3,54 +3,48 @@ import { WAMessage, WASocket } from '@whiskeysockets/baileys';
 
 import { readEnvFile } from './env.js';
 
-interface TranscriptionConfig {
-  model: string;
-  enabled: boolean;
-  fallbackMessage: string;
-}
+const GEMINI_MODEL = 'gemini-2.5-flash';
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const FALLBACK_MESSAGE = '[Voice Message - transcription unavailable]';
 
-const DEFAULT_CONFIG: TranscriptionConfig = {
-  model: 'whisper-1',
-  enabled: true,
-  fallbackMessage: '[Voice Message - transcription unavailable]',
-};
-
-async function transcribeWithGroq(audioBuffer: Buffer): Promise<string | null> {
-  const env = readEnvFile(['GROQ_API_KEY']);
-  const apiKey = env.GROQ_API_KEY;
+async function transcribeWithGemini(audioBuffer: Buffer, mimeType = 'audio/ogg'): Promise<string | null> {
+  const env = readEnvFile(['GEMINI_API_KEY']);
+  const apiKey = env.GEMINI_API_KEY;
 
   if (!apiKey) {
-    console.warn('GROQ_API_KEY not set in .env');
+    console.warn('GEMINI_API_KEY not set in .env');
     return null;
   }
 
   try {
-    const form = new FormData();
-    form.append(
-      'file',
-      new Blob([audioBuffer], { type: 'audio/ogg' }),
-      'voice.ogg',
-    );
-    form.append('model', 'whisper-large-v3-turbo');
-    form.append('response_format', 'text');
+    const body = {
+      contents: [
+        {
+          parts: [
+            { inline_data: { mime_type: mimeType, data: audioBuffer.toString('base64') } },
+            { text: 'Transcreva este áudio em texto. Responda apenas com a transcrição literal, sem comentários ou formatação adicional.' },
+          ],
+        },
+      ],
+    };
 
-    const response = await fetch(
-      'https://api.groq.com/openai/v1/audio/transcriptions',
-      {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        body: form,
-      },
-    );
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
 
     if (!response.ok) {
-      console.error(`Groq transcription error ${response.status}: ${await response.text()}`);
+      console.error(`Gemini transcription error ${response.status}: ${await response.text()}`);
       return null;
     }
 
-    return (await response.text()).trim();
+    const data = (await response.json()) as {
+      candidates: { content: { parts: { text?: string }[] } }[];
+    };
+    return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('').trim() ?? null;
   } catch (err) {
-    console.error('Groq transcription failed:', err);
+    console.error('Gemini transcription failed:', err);
     return null;
   }
 }
@@ -59,12 +53,6 @@ export async function transcribeAudioMessage(
   msg: WAMessage,
   sock: WASocket,
 ): Promise<string | null> {
-  const config = DEFAULT_CONFIG;
-
-  if (!config.enabled) {
-    return config.fallbackMessage;
-  }
-
   try {
     const buffer = (await downloadMediaMessage(
       msg,
@@ -78,21 +66,21 @@ export async function transcribeAudioMessage(
 
     if (!buffer || buffer.length === 0) {
       console.error('Failed to download audio message');
-      return config.fallbackMessage;
+      return FALLBACK_MESSAGE;
     }
 
     console.log(`Downloaded audio message: ${buffer.length} bytes`);
 
-    const transcript = await transcribeWithGroq(buffer);
+    const transcript = await transcribeWithGemini(buffer);
 
     if (!transcript) {
-      return config.fallbackMessage;
+      return FALLBACK_MESSAGE;
     }
 
     return transcript.trim();
   } catch (err) {
     console.error('Transcription error:', err);
-    return config.fallbackMessage;
+    return FALLBACK_MESSAGE;
   }
 }
 

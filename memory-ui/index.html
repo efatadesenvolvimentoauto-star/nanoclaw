@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atlas — Memória</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #09090b;
+    --surface: #111113;
+    --surface2: #18181b;
+    --border: #27272a;
+    --border2: #3f3f46;
+    --text: #fafafa;
+    --muted: #71717a;
+    --muted2: #52525b;
+    --accent: #6366f1;
+    --accent-hover: #4f46e5;
+    --accent-glow: rgba(99,102,241,0.15);
+    --green: #22c55e;
+    --amber: #f59e0b;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted2); }
+
+  /* Layout */
+  .layout { display: flex; height: 100vh; }
+  .sidebar { width: 260px; min-width: 260px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* Sidebar header */
+  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .logo-orb { width: 32px; height: 32px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; box-shadow: 0 0 20px rgba(99,102,241,0.3); flex-shrink: 0; }
+  .logo-text { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; }
+  .logo-sub { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; }
+
+  /* Search */
+  .search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .search-box { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px 7px 32px; font-size: 12.5px; color: var(--text); outline: none; transition: border-color 0.15s; position: relative; font-family: inherit; }
+  .search-box::placeholder { color: var(--muted2); }
+  .search-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .search-wrap { position: relative; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .search-icon { position: absolute; left: 22px; top: 50%; transform: translateY(-50%); color: var(--muted2); pointer-events: none; }
+
+  /* Nav groups */
+  .nav-scroll { flex: 1; overflow-y: auto; padding: 8px 0; }
+  .nav-group { margin-bottom: 4px; }
+  .nav-group-label { display: flex; align-items: center; gap: 6px; padding: 6px 14px 4px; font-size: 10px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: 0.8px; cursor: pointer; user-select: none; }
+  .nav-group-label:hover { color: var(--muted); }
+  .nav-group-label .chevron { transition: transform 0.2s; margin-left: auto; }
+  .nav-group-label.collapsed .chevron { transform: rotate(-90deg); }
+  .nav-files { overflow: hidden; }
+  .nav-file { display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 22px; font-size: 12.5px; color: var(--muted); cursor: pointer; transition: all 0.12s; border-left: 2px solid transparent; border-radius: 0 6px 6px 0; margin: 1px 6px 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav-file:hover { background: var(--surface2); color: var(--text); }
+  .nav-file.active { background: var(--accent-glow); color: var(--text); border-left-color: var(--accent); }
+  .nav-file .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted2); flex-shrink: 0; transition: background 0.15s; }
+  .nav-file.active .dot { background: var(--accent); }
+  .nav-file:hover .dot { background: var(--muted); }
+
+  /* Group badge */
+  .group-badge { font-size: 9px; padding: 1px 5px; border-radius: 4px; font-weight: 600; letter-spacing: 0.3px; margin-left: auto; flex-shrink: 0; }
+  .badge-global { background: rgba(99,102,241,0.15); color: #818cf8; }
+  .badge-chat { background: rgba(34,197,94,0.12); color: #4ade80; }
+
+  /* Sidebar footer */
+  .sidebar-footer { padding: 10px 12px; border-top: 1px solid var(--border); }
+  .new-file-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; color: var(--muted); font-size: 12px; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  .new-file-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
+  /* Topbar */
+  .topbar { height: 52px; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 12px; background: var(--surface); flex-shrink: 0; }
+  .breadcrumb { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); flex: 1; min-width: 0; overflow: hidden; }
+  .breadcrumb .sep { color: var(--muted2); }
+  .breadcrumb .current { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dirty-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); flex-shrink: 0; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  /* Toolbar */
+  .toolbar { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .btn { display: flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 7px; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: all 0.15s; border: none; font-family: inherit; }
+  .btn-ghost { background: transparent; color: var(--muted); }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+  .btn-ghost.active { background: var(--surface2); color: var(--text); }
+  .btn-accent { background: var(--accent); color: white; box-shadow: 0 0 16px rgba(99,102,241,0.3); }
+  .btn-accent:hover { background: var(--accent-hover); box-shadow: 0 0 20px rgba(99,102,241,0.4); }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border2); }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+  .kbd { font-size: 10px; color: var(--muted2); background: var(--surface2); border: 1px solid var(--border); border-radius: 3px; padding: 1px 4px; font-family: 'JetBrains Mono', monospace; }
+
+  /* Content area */
+  .content { flex: 1; overflow: hidden; display: flex; position: relative; }
+
+  /* Preview */
+  #preview-pane { flex: 1; overflow-y: auto; padding: 40px 56px; display: none; }
+  #preview-pane.active { display: block; }
+  .md h1 { font-size: 1.6rem; font-weight: 700; color: var(--text); margin-bottom: 1rem; letter-spacing: -0.5px; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+  .md h2 { font-size: 1.1rem; font-weight: 600; color: var(--text); margin: 1.5rem 0 0.5rem; }
+  .md h3 { font-size: 1rem; font-weight: 600; color: #a1a1aa; margin: 1rem 0 0.4rem; }
+  .md p { color: #a1a1aa; line-height: 1.75; margin-bottom: 0.75rem; font-size: 0.9rem; }
+  .md ul,ol { color: #a1a1aa; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+  .md li { line-height: 1.7; margin-bottom: 0.2rem; font-size: 0.9rem; }
+  .md code { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; background: var(--surface2); color: #a78bfa; padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid var(--border); }
+  .md pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; overflow-x: auto; }
+  .md pre code { background: none; border: none; padding: 0; color: #a1a1aa; }
+  .md strong { color: var(--text); font-weight: 600; }
+  .md a { color: #818cf8; text-decoration: none; }
+  .md a:hover { text-decoration: underline; }
+  .md blockquote { border-left: 3px solid var(--accent); padding-left: 1rem; color: var(--muted); font-style: italic; margin-bottom: 0.75rem; }
+  .md hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+  .md table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.85rem; }
+  .md th { background: var(--surface2); padding: 8px 12px; text-align: left; font-weight: 600; font-size: 0.8rem; color: var(--muted); border: 1px solid var(--border); }
+  .md td { padding: 8px 12px; border: 1px solid var(--border); color: #a1a1aa; }
+  .md tr:hover td { background: rgba(255,255,255,0.02); }
+
+  /* Editor */
+  #editor-pane { flex: 1; overflow: hidden; display: none; }
+  #editor-pane.active { display: flex; flex-direction: column; }
+  #editor { width: 100%; flex: 1; background: var(--bg); color: var(--text); border: none; outline: none; resize: none; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.8; padding: 40px 56px; overflow-y: auto; }
+
+  /* Split view */
+  #split-pane { flex: 1; overflow: hidden; display: none; }
+  #split-pane.active { display: flex; }
+  .split-editor { flex: 1; border-right: 1px solid var(--border); overflow: hidden; display: flex; flex-direction: column; }
+  .split-editor textarea { flex: 1; background: var(--surface); color: var(--text); border: none; outline: none; resize: none; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.8; padding: 32px 28px; overflow-y: auto; }
+  .split-preview { flex: 1; overflow-y: auto; padding: 32px 28px; }
+  .pane-label { padding: 8px 16px; font-size: 10px; color: var(--muted2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; border-bottom: 1px solid var(--border); background: var(--surface); }
+
+  /* Empty state */
+  .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 12px; color: var(--muted2); }
+  .empty .orb { width: 64px; height: 64px; background: var(--surface2); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 8px; border: 1px solid var(--border); }
+  .empty h3 { font-size: 15px; font-weight: 600; color: var(--muted); }
+  .empty p { font-size: 13px; text-align: center; max-width: 260px; line-height: 1.6; }
+
+  /* Status bar */
+  .statusbar { height: 26px; border-top: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 16px; background: var(--surface); flex-shrink: 0; }
+  .status-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted2); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .status-dot.green { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+  .status-dot.amber { background: var(--amber); }
+
+  /* Toast */
+  #toast { position: fixed; bottom: 40px; right: 24px; z-index: 100; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast { padding: 10px 16px; border-radius: 8px; font-size: 13px; display: flex; align-items: center; gap: 8px; animation: slideIn 0.2s ease; border: 1px solid transparent; backdrop-filter: blur(8px); }
+  .toast.success { background: rgba(34,197,94,0.12); border-color: rgba(34,197,94,0.3); color: #4ade80; }
+  .toast.error { background: rgba(239,68,68,0.12); border-color: rgba(239,68,68,0.3); color: #f87171; }
+  .toast.info { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.3); color: #818cf8; }
+  @keyframes slideIn { from{transform:translateX(20px);opacity:0} to{transform:translateX(0);opacity:1} }
+  @keyframes fadeOut { to{opacity:0;transform:translateY(6px)} }
+
+  /* Modal */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); animation: fadeIn 0.15s ease; }
+  @keyframes fadeIn { from{opacity:0} }
+  .modal { background: var(--surface); border: 1px solid var(--border2); border-radius: 12px; padding: 24px; width: 420px; animation: scaleIn 0.15s ease; }
+  @keyframes scaleIn { from{transform:scale(0.96);opacity:0} }
+  .modal h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+  .modal-label { font-size: 12px; color: var(--muted); margin-bottom: 6px; margin-top: 12px; }
+  .modal input, .modal select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 9px 12px; font-size: 13px; color: var(--text); outline: none; font-family: inherit; transition: border-color 0.15s; }
+  .modal input:focus, .modal select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+  .modal select option { background: var(--surface2); }
+
+  /* Transitions */
+  .fade-in { animation: fadeIn 0.2s ease; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-orb">🧠</div>
+      <div>
+        <div class="logo-text">Atlas</div>
+        <div class="logo-sub">Memory Manager</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" class="search-box" id="search" placeholder="Buscar arquivos... (⌘K)">
+    </div>
+
+    <nav class="nav-scroll" id="nav"></nav>
+
+    <div class="sidebar-footer">
+      <button class="new-file-btn" onclick="openNewModal()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        Novo arquivo de memória
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="breadcrumb" id="breadcrumb">
+        <span>Selecione um arquivo</span>
+      </div>
+      <div id="dirty-indicator" class="dirty-dot hidden"></div>
+
+      <div class="toolbar">
+        <div style="display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:2px;gap:2px" id="view-toggle">
+          <button class="btn btn-ghost active" id="btn-preview" onclick="setMode('preview')" title="Visualizar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button class="btn btn-ghost" id="btn-split" onclick="setMode('split')" title="Split">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+          </button>
+          <button class="btn btn-ghost" id="btn-edit" onclick="setMode('edit')" title="Editar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+        </div>
+
+        <button class="btn btn-accent hidden" id="save-btn" onclick="saveFile()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+          Salvar
+          <span class="kbd">⌘S</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content" id="content-area">
+
+      <!-- Empty state -->
+      <div class="empty fade-in" id="empty-state">
+        <div class="orb">🧠</div>
+        <h3>Nenhum arquivo selecionado</h3>
+        <p>Escolha um arquivo de memória na sidebar para visualizar ou editar</p>
+      </div>
+
+      <!-- Preview -->
+      <div id="preview-pane">
+        <div class="md fade-in" id="preview-content"></div>
+      </div>
+
+      <!-- Editor -->
+      <div id="editor-pane">
+        <textarea id="editor" placeholder="Escreva em Markdown..."></textarea>
+      </div>
+
+      <!-- Split -->
+      <div id="split-pane">
+        <div class="split-editor">
+          <div class="pane-label">EDITAR</div>
+          <textarea id="split-editor" oninput="syncSplit()"></textarea>
+        </div>
+        <div class="split-preview">
+          <div class="pane-label">PRÉVIA</div>
+          <div class="md" id="split-preview" style="padding-top:12px"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Status bar -->
+    <div class="statusbar">
+      <div class="status-item">
+        <div class="status-dot green"></div>
+        <span>Atlas online</span>
+      </div>
+      <div class="status-item" id="status-file" style="display:none">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+        <span id="status-name"></span>
+      </div>
+      <div class="status-item" id="status-chars" style="display:none">
+        <span id="status-chars-val"></span>
+      </div>
+      <div style="margin-left:auto" class="status-item">
+        <span id="status-saved" style="color:var(--muted2)">—</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- New file modal -->
+<div id="modal" class="modal-bg hidden" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3>Novo arquivo de memória</h3>
+    <div class="modal-label">Nome do arquivo</div>
+    <input type="text" id="modal-name" placeholder="ex: clientes.md" oninput="validateModal()">
+    <div class="modal-label">Localização</div>
+    <select id="modal-group">
+      <option value="global">🌐 Global (todos os chats)</option>
+    </select>
+    <div style="font-size:11px;color:var(--muted2);margin-top:6px" id="modal-path-preview"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-accent" id="modal-create" onclick="createFile()" disabled>Criar arquivo</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+marked.setOptions({ breaks: true, gfm: true });
+
+let state = {
+  files: [],
+  currentPath: null,
+  currentContent: '',
+  mode: 'preview',
+  dirty: false,
+  savedAt: null,
+};
+
+// ── API ──────────────────────────────────────────────
+
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ── Sidebar ──────────────────────────────────────────
+
+async function loadSidebar(filter = '') {
+  state.files = await api('GET', '/api/files');
+  renderNav(filter);
+  populateGroupSelect();
+}
+
+function renderNav(filter = '') {
+  const nav = document.getElementById('nav');
+  const lf = filter.toLowerCase();
+  let html = '';
+  for (const group of state.files) {
+    const files = group.files.filter(f =>
+      !lf || f.name.toLowerCase().includes(lf)
+    );
+    if (!files.length) continue;
+    const isGlobal = group.group === 'global';
+    const badge = isGlobal
+      ? '<span class="group-badge badge-global">global</span>'
+      : '<span class="group-badge badge-chat">chat</span>';
+    const icon = isGlobal ? '🌐' : '💬';
+    html += `
+      <div class="nav-group">
+        <div class="nav-group-label" onclick="toggleGroup(this)">
+          <span>${icon}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${group.label}</span>
+          ${badge}
+          <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="nav-files">
+          ${files.map(f => `
+            <div class="nav-file ${state.currentPath === f.path ? 'active' : ''}"
+                 data-path="${f.path.replace(/"/g, '&quot;')}"
+                 onclick="openFile(this.dataset.path)"
+                 title="${f.path}">
+              <span class="dot"></span>
+              <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+  }
+  nav.innerHTML = html || `<div style="padding:20px;text-align:center;color:var(--muted2);font-size:12px">Nenhum resultado</div>`;
+}
+
+function toggleGroup(el) {
+  el.classList.toggle('collapsed');
+  const files = el.nextElementSibling;
+  files.style.display = el.classList.contains('collapsed') ? 'none' : '';
+}
+
+function populateGroupSelect() {
+  const sel = document.getElementById('modal-group');
+  sel.innerHTML = '<option value="global">🌐 Global (todos os chats)</option>';
+  for (const g of state.files) {
+    if (g.group !== 'global') {
+      sel.innerHTML += `<option value="${g.group}">💬 ${g.group}</option>`;
+    }
+  }
+  updateModalPath();
+}
+
+// ── File operations ──────────────────────────────────
+
+async function openFile(filePath) {
+  if (state.dirty && !confirm('Alterações não salvas. Descartar?')) return;
+  try {
+    const data = await api('GET', `/api/file?path=${encodeURIComponent(filePath)}`);
+    state.currentPath = filePath;
+    state.currentContent = data.content;
+    state.dirty = false;
+    updateDirty();
+    updateBreadcrumb();
+    renderContent();
+    highlightActive();
+    updateStatusBar();
+  } catch (err) {
+    toast('Erro ao abrir arquivo: ' + err.message, 'error');
+    console.error('openFile error:', err);
+  }
+}
+
+function renderContent() {
+  const content = state.currentContent;
+  document.getElementById('preview-content').innerHTML = marked.parse(content || '*arquivo vazio*');
+  document.getElementById('editor').value = content;
+  document.getElementById('split-editor').value = content;
+  document.getElementById('split-preview').innerHTML = marked.parse(content || '*arquivo vazio*');
+  document.getElementById('empty-state').style.display = 'none';
+  applyMode();
+}
+
+async function saveFile() {
+  if (!state.currentPath) return;
+  const content = getActiveContent();
+  await api('POST', '/api/file', { path: state.currentPath, content });
+  state.currentContent = content;
+  state.dirty = false;
+  state.savedAt = new Date();
+  updateDirty();
+  updateStatusBar();
+  // Refresh preview
+  document.getElementById('preview-content').innerHTML = marked.parse(content || '*arquivo vazio*');
+  document.getElementById('split-preview').innerHTML = marked.parse(content || '*arquivo vazio*');
+  toast('Arquivo salvo', 'success');
+}
+
+function getActiveContent() {
+  if (state.mode === 'edit') return document.getElementById('editor').value;
+  if (state.mode === 'split') return document.getElementById('split-editor').value;
+  return state.currentContent;
+}
+
+// ── View mode ────────────────────────────────────────
+
+function setMode(mode) {
+  state.mode = mode;
+  document.getElementById('btn-preview').classList.toggle('active', mode === 'preview');
+  document.getElementById('btn-split').classList.toggle('active', mode === 'split');
+  document.getElementById('btn-edit').classList.toggle('active', mode === 'edit');
+  document.getElementById('save-btn').classList.toggle('hidden', mode === 'preview');
+  applyMode();
+}
+
+function applyMode() {
+  document.getElementById('preview-pane').classList.toggle('active', state.mode === 'preview');
+  document.getElementById('editor-pane').classList.toggle('active', state.mode === 'edit');
+  document.getElementById('split-pane').classList.toggle('active', state.mode === 'split');
+  if (state.mode === 'edit') document.getElementById('editor').focus();
+  if (state.mode === 'split') document.getElementById('split-editor').focus();
+}
+
+function syncSplit() {
+  const val = document.getElementById('split-editor').value;
+  document.getElementById('split-preview').innerHTML = marked.parse(val || '*arquivo vazio*');
+  markDirty();
+}
+
+// ── Dirty state ──────────────────────────────────────
+
+function markDirty() {
+  if (!state.dirty) {
+    state.dirty = true;
+    updateDirty();
+  }
+}
+
+function updateDirty() {
+  const dot = document.getElementById('dirty-indicator');
+  const btn = document.getElementById('save-btn');
+  dot.classList.toggle('hidden', !state.dirty);
+  if (state.mode !== 'preview') btn.classList.toggle('hidden', !state.dirty && state.mode !== 'edit' && state.mode !== 'split');
+}
+
+// ── UI helpers ───────────────────────────────────────
+
+function highlightActive() {
+  renderNav(document.getElementById('search').value);
+}
+
+function updateBreadcrumb() {
+  if (!state.currentPath) return;
+  const parts = state.currentPath.split('/');
+  const file = parts.pop();
+  const group = parts[parts.length - 1] || '';
+  document.getElementById('breadcrumb').innerHTML = `
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted2)"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+    <span style="color:var(--muted2)">${group}</span>
+    <span class="sep">/</span>
+    <span class="current">${file}</span>
+  `;
+}
+
+function updateStatusBar() {
+  const file = state.currentPath?.split('/').pop() || '';
+  const chars = state.currentContent?.length || 0;
+  const words = state.currentContent?.split(/\s+/).filter(Boolean).length || 0;
+  document.getElementById('status-file').style.display = file ? '' : 'none';
+  document.getElementById('status-chars').style.display = file ? '' : 'none';
+  document.getElementById('status-name').textContent = file;
+  document.getElementById('status-chars-val').textContent = `${words} palavras · ${chars} chars`;
+  if (state.savedAt) {
+    const t = state.savedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    document.getElementById('status-saved').textContent = `Salvo às ${t}`;
+  }
+}
+
+// ── Toast ────────────────────────────────────────────
+
+function toast(msg, type = 'info') {
+  const icons = { success: '✓', error: '✕', info: 'ℹ' };
+  const div = document.createElement('div');
+  div.className = `toast ${type}`;
+  div.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
+  document.getElementById('toast').appendChild(div);
+  setTimeout(() => {
+    div.style.animation = 'fadeOut 0.3s ease forwards';
+    setTimeout(() => div.remove(), 300);
+  }, 2500);
+}
+
+// ── New file modal ────────────────────────────────────
+
+function openNewModal() {
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('modal-name').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  document.getElementById('modal-name').value = '';
+}
+
+function validateModal() {
+  const name = document.getElementById('modal-name').value.trim();
+  const valid = name.length > 0 && name.endsWith('.md');
+  document.getElementById('modal-create').disabled = !valid;
+  updateModalPath();
+}
+
+function updateModalPath() {
+  const name = document.getElementById('modal-name').value.trim() || 'arquivo.md';
+  const group = document.getElementById('modal-group').value;
+  const pathEl = document.getElementById('modal-path-preview');
+  if (group === 'global') {
+    pathEl.textContent = `groups/global/${name}`;
+  } else {
+    pathEl.textContent = `groups/${group}/memory/${name}`;
+  }
+}
+
+async function createFile() {
+  const name = document.getElementById('modal-name').value.trim();
+  const group = document.getElementById('modal-group').value;
+  if (!name.endsWith('.md')) return;
+  const filePath = group === 'global'
+    ? `/api/resolve?group=global&name=${encodeURIComponent(name)}`
+    : `/api/resolve?group=${group}&name=${encodeURIComponent(name)}`;
+  // Get resolved path from server
+  const data = await api('GET', filePath);
+  await api('POST', '/api/file', { path: data.path, content: `# ${name.replace('.md','')}\n\n` });
+  closeModal();
+  await loadSidebar();
+  await openFile(data.path);
+  toast('Arquivo criado!', 'success');
+  setMode('edit');
+}
+
+// ── Search ───────────────────────────────────────────
+
+document.getElementById('search').addEventListener('input', e => {
+  renderNav(e.target.value);
+});
+
+// ── Editor events ────────────────────────────────────
+
+document.getElementById('editor').addEventListener('input', () => {
+  markDirty();
+  updateStatusBar();
+});
+
+document.getElementById('modal-group').addEventListener('change', updateModalPath);
+
+// ── Keyboard shortcuts ────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); saveFile(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); document.getElementById('search').focus(); }
+  if (e.key === 'Escape') { closeModal(); document.getElementById('search').blur(); }
+});
+
+// ── Init ─────────────────────────────────────────────
+
+loadSidebar();
+</script>
+</body>
+</html>

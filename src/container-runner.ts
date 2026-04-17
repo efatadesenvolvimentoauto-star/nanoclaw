@@ -11,7 +11,9 @@ import {
   CONTAINER_MAX_OUTPUT_SIZE,
   CONTAINER_TIMEOUT,
   DATA_DIR,
+  GEMINI_API_KEY,
   GROUPS_DIR,
+  GROQ_API_KEY,
   IDLE_TIMEOUT,
   ONECLI_API_KEY,
   ONECLI_URL,
@@ -44,6 +46,8 @@ export interface ContainerInput {
   isScheduledTask?: boolean;
   assistantName?: string;
   script?: string;
+  senderPhone?: string;
+  ownerPhone?: string;
 }
 
 export interface ContainerOutput {
@@ -213,13 +217,13 @@ function buildVolumeMounts(
     'agent-runner-src',
   );
   if (fs.existsSync(agentRunnerSrc)) {
-    const srcIndex = path.join(agentRunnerSrc, 'index.ts');
-    const cachedIndex = path.join(groupAgentRunnerDir, 'index.ts');
     const needsCopy =
       !fs.existsSync(groupAgentRunnerDir) ||
-      !fs.existsSync(cachedIndex) ||
-      (fs.existsSync(srcIndex) &&
-        fs.statSync(srcIndex).mtimeMs > fs.statSync(cachedIndex).mtimeMs);
+      fs.readdirSync(agentRunnerSrc).some((file) => {
+        const src = path.join(agentRunnerSrc, file);
+        const cached = path.join(groupAgentRunnerDir, file);
+        return !fs.existsSync(cached) || fs.statSync(src).mtimeMs > fs.statSync(cached).mtimeMs;
+      });
     if (needsCopy) {
       fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
     }
@@ -252,6 +256,9 @@ async function buildContainerArgs(
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
+
+  if (GROQ_API_KEY) args.push('-e', `GROQ_API_KEY=${GROQ_API_KEY}`);
+  if (GEMINI_API_KEY) args.push('-e', `GEMINI_API_KEY=${GEMINI_API_KEY}`);
 
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
