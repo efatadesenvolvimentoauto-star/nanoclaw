@@ -134,6 +134,20 @@ Standard Markdown works: `**bold**`, `*italic*`, `[links](url)`, `# headings`.
 
 ---
 
+## Agendamento de Tarefas (IMPORTANTE)
+
+**SEMPRE use `schedule_task` do MCP NanoClaw para criar automações.** As tasks criadas com `schedule_task` são salvas no banco SQLite e **sobrevivem a reinicializações** — são permanentes até você pausar ou cancelar.
+
+**NUNCA use `CronCreate` do Claude Code** para automações do usuário. O `CronCreate` é vinculado à sessão do Claude Code e some quando o sistema reinicia. É inútil para automações reais.
+
+Resumo:
+- `mcp__nanoclaw__schedule_task` → **persistente** ✅ (SQLite, sobrevive reinícios)
+- `CronCreate` → **sessão** ❌ (some ao reiniciar, não use)
+
+Após criar uma task com `schedule_task`, confirme ao usuário que ela é **permanente** e ficará ativa mesmo após reinicializações.
+
+---
+
 ## Task Scripts
 
 For any recurring task, use `schedule_task`. Frequent agent invocations — especially multiple times a day — consume API credits and can risk account restrictions. If a simple check can determine whether action is needed, add a `script` — it runs first, and the agent is only called when the check passes. This keeps invocations to a minimum.
