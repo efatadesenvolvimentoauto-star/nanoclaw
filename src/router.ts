@@ -39,8 +39,24 @@ export function stripInternalTags(text: string): string {
   return text.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
 }
 
+export function stripToolArtifacts(text: string): string {
+  return text
+    .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+    .replace(/<execute_bash>[\s\S]*?<\/execute_bash>/g, '')
+    .replace(/<read_file>[\s\S]*?<\/read_file>/g, '')
+    .replace(/<write_file>[\s\S]*?<\/write_file>/g, '')
+    .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '')
+    // Strip {"tool_code": ...} possibly prefixed with "json"
+    .replace(/(?:^|\n)json?\s*\{[\s\S]*?"tool_code"[\s\S]*?\}/gm, '')
+    .replace(/\{"tool_code"[\s\S]*?\}/g, '')
+    // Strip bare bash/shell command lines (e.g. "bash\ncat /workspace/...")
+    .replace(/^bash\n[^\n]+(\n[^\n]+)*$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function formatOutbound(rawText: string): string {
-  const text = stripInternalTags(rawText);
+  const text = stripToolArtifacts(rawText);
   if (!text) return '';
   return text;
 }
