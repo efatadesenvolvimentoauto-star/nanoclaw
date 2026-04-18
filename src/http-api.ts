@@ -8,9 +8,10 @@ import {
   runContainerAgent,
   writeTasksSnapshot,
 } from './container-runner.js';
-import { getAllTasks } from './db.js';
+import { getAllTasks, getMessagesSince } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { logger } from './logger.js';
+import { formatMessages } from './router.js';
 import { RegisteredGroup } from './types.js';
 
 // Paths allowed for memory read/write (relative to project root)
@@ -61,7 +62,11 @@ function buildFileTree(
     }
   }
   return nodes.sort((a, b) =>
-    a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1,
+    a.type === b.type
+      ? a.name.localeCompare(b.name)
+      : a.type === 'dir'
+        ? -1
+        : 1,
   );
 }
 
@@ -87,6 +92,7 @@ export function startHttpApi(options: {
   assistantName: string;
   ownerPhone?: string;
   ownerLid?: string;
+  timezone: string;
 }): http.Server {
   const secret = process.env.NANOCLAW_SECRET || '';
 
@@ -225,8 +231,24 @@ export function startHttpApi(options: {
     const [, group] = mainEntry;
 
     const displayName = senderName || userId;
-    const prompt = `[${displayName} via Efata Web]: ${message}`;
     const sessionId = options.sessions()[group.folder];
+
+    // Inject recent messages from all registered chats so Atlas has
+    // full cross-channel context (WhatsApp, other groups, etc.)
+    const allGroups = options.registeredGroups();
+    const contextParts: string[] = [];
+    for (const [jid, g] of Object.entries(allGroups)) {
+      const recent = getMessagesSince(jid, '', options.assistantName, 30);
+      if (recent.length > 0) {
+        const formatted = formatMessages(recent, options.timezone);
+        contextParts.push(`[Histórico recente — ${g.name}]:\n${formatted}`);
+      }
+    }
+    const contextBlock =
+      contextParts.length > 0
+        ? `${contextParts.join('\n\n')}\n\n[Mensagem atual via Efata Web — ${displayName}]:\n`
+        : `[${displayName} via Efata Web]: `;
+    const prompt = `${contextBlock}${message}`;
 
     // Keep task snapshot fresh so the agent can see scheduled tasks
     const tasks = getAllTasks();

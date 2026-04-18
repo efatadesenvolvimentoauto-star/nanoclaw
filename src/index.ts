@@ -789,6 +789,7 @@ async function main(): Promise<void> {
     assistantName: ASSISTANT_NAME,
     ownerPhone: OWNER_PHONE || undefined,
     ownerLid: OWNER_LID || undefined,
+    timezone: TIMEZONE,
   });
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
