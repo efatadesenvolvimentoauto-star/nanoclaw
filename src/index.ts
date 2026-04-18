@@ -703,6 +703,22 @@ async function main(): Promise<void> {
     registeredGroups: () => registeredGroups,
   };
 
+  // Start HTTP API immediately — independent of channel connections.
+  // This ensures the web platform stays up even if WhatsApp is reconnecting.
+  startHttpApi({
+    registeredGroups: () => registeredGroups,
+    sessions: () => sessions,
+    setSession: (folder, sessionId) => {
+      sessions[folder] = sessionId;
+      setSession(folder, sessionId);
+    },
+    queue,
+    assistantName: ASSISTANT_NAME,
+    ownerPhone: OWNER_PHONE || undefined,
+    ownerLid: OWNER_LID || undefined,
+    timezone: TIMEZONE,
+  });
+
   // Create and connect all registered channels.
   // Each channel self-registers via the barrel import above.
   // Factories return null when credentials are missing, so unconfigured channels are skipped.
@@ -778,19 +794,6 @@ async function main(): Promise<void> {
   });
   startSessionCleanup();
   startHostExec();
-  startHttpApi({
-    registeredGroups: () => registeredGroups,
-    sessions: () => sessions,
-    setSession: (folder, sessionId) => {
-      sessions[folder] = sessionId;
-      setSession(folder, sessionId);
-    },
-    queue,
-    assistantName: ASSISTANT_NAME,
-    ownerPhone: OWNER_PHONE || undefined,
-    ownerLid: OWNER_LID || undefined,
-    timezone: TIMEZONE,
-  });
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
   startMessageLoop().catch((err) => {
