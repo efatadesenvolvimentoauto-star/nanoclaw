@@ -11,6 +11,7 @@ import {
   IDLE_TIMEOUT,
   MAX_MESSAGES_PER_PROMPT,
   ONECLI_URL,
+  OWNER_LID,
   OWNER_PHONE,
   POLL_INTERVAL,
   TIMEZONE,
@@ -65,6 +66,7 @@ import {
 import { startSessionCleanup } from './session-cleanup.js';
 import { startHostExec } from './host-exec.js';
 import { startSchedulerLoop } from './task-scheduler.js';
+import { startHttpApi } from './http-api.js';
 import { Channel, NewMessage, RegisteredGroup } from './types.js';
 import { logger } from './logger.js';
 
@@ -255,11 +257,20 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
 
   const prompt = formatMessages(missedMessages, TIMEZONE);
 
-  // Extract sender phone from the last non-bot message (strip JID suffix)
+  // Extract sender identity from the last non-bot message.
+  // WhatsApp may use LID format ("211879829966888@lid") instead of phone JID.
+  // We pass both senderPhone and senderLid so the container can check either.
+  // For DM chats the chatJid itself contains the owner's phone as fallback.
   const lastUserMsg = [...missedMessages].reverse().find((m) => !m.is_from_me);
-  const senderPhone = lastUserMsg?.sender
-    ? lastUserMsg.sender.split('@')[0].split(':')[0]
-    : undefined;
+  const rawSender = lastUserMsg?.sender || '';
+  const isLid = rawSender.endsWith('@lid');
+  const chatPhone = chatJid.endsWith('@s.whatsapp.net')
+    ? chatJid.split('@')[0]
+    : '';
+  const senderPhone = isLid
+    ? chatPhone
+    : rawSender.split('@')[0].split(':')[0] || chatPhone || undefined;
+  const senderLid = isLid ? rawSender.split('@')[0] : undefined;
 
   // Advance cursor so the piping path in startMessageLoop won't re-fetch
   // these messages. Save the old cursor so we can roll back on error.
@@ -409,6 +420,7 @@ async function runAgent(
         assistantName: ASSISTANT_NAME,
         senderPhone,
         ownerPhone: OWNER_PHONE || undefined,
+        ownerLid: OWNER_LID || undefined,
       },
       (proc, containerName) =>
         queue.registerProcess(chatJid, proc, containerName, group.folder),
@@ -766,6 +778,18 @@ async function main(): Promise<void> {
   });
   startSessionCleanup();
   startHostExec();
+  startHttpApi({
+    registeredGroups: () => registeredGroups,
+    sessions: () => sessions,
+    setSession: (folder, sessionId) => {
+      sessions[folder] = sessionId;
+      setSession(folder, sessionId);
+    },
+    queue,
+    assistantName: ASSISTANT_NAME,
+    ownerPhone: OWNER_PHONE || undefined,
+    ownerLid: OWNER_LID || undefined,
+  });
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
   startMessageLoop().catch((err) => {
