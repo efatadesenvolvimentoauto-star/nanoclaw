@@ -8,7 +8,15 @@ import {
   runContainerAgent,
   writeTasksSnapshot,
 } from './container-runner.js';
-import { getAllTasks, getMessagesSince } from './db.js';
+import {
+  createTask,
+  deleteTask,
+  getAllTasks,
+  getMessagesSince,
+  getTaskById,
+  getTaskRunLogs,
+  updateTask,
+} from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { logger } from './logger.js';
 import { formatMessages } from './router.js';
@@ -201,6 +209,94 @@ export function startHttpApi(options: {
       return;
     }
     // --- End Memory API ---
+
+    // --- Tasks API ---
+    // GET  /tasks          → list all tasks
+    // GET  /tasks/:id      → get task + run logs
+    // POST /tasks          → create task
+    // PUT  /tasks/:id      → update task (status, prompt, etc.)
+    // DELETE /tasks/:id    → delete task
+    if (url.pathname === '/tasks' && req.method === 'GET') {
+      sendJson(200, { tasks: getAllTasks() });
+      return;
+    }
+
+    const taskMatch = url.pathname.match(/^\/tasks\/([^/]+)$/);
+    if (taskMatch) {
+      const taskId = taskMatch[1];
+
+      if (req.method === 'GET') {
+        const task = getTaskById(taskId);
+        if (!task) { sendJson(404, { error: 'Task not found' }); return; }
+        const logs = getTaskRunLogs(taskId, 20);
+        sendJson(200, { task, logs });
+        return;
+      }
+
+      if (req.method === 'PUT') {
+        let payload: Partial<import('./types.js').ScheduledTask>;
+        try { payload = JSON.parse(await readBody(req)); }
+        catch { sendJson(400, { error: 'Invalid JSON' }); return; }
+        const task = getTaskById(taskId);
+        if (!task) { sendJson(404, { error: 'Task not found' }); return; }
+        updateTask(taskId, payload);
+        sendJson(200, { ok: true, task: getTaskById(taskId) });
+        return;
+      }
+
+      if (req.method === 'DELETE') {
+        const task = getTaskById(taskId);
+        if (!task) { sendJson(404, { error: 'Task not found' }); return; }
+        deleteTask(taskId);
+        logger.info({ taskId }, 'Task deleted via API');
+        sendJson(200, { ok: true });
+        return;
+      }
+    }
+
+    if (url.pathname === '/tasks' && req.method === 'POST') {
+      let payload: {
+        prompt: string;
+        schedule_type: 'cron' | 'interval' | 'once';
+        schedule_value: string;
+        group_folder?: string;
+        chat_jid?: string;
+        script?: string;
+      };
+      try { payload = JSON.parse(await readBody(req)); }
+      catch { sendJson(400, { error: 'Invalid JSON' }); return; }
+
+      if (!payload.prompt || !payload.schedule_type || !payload.schedule_value) {
+        sendJson(400, { error: 'Missing prompt, schedule_type or schedule_value' });
+        return;
+      }
+
+      const groups = options.registeredGroups();
+      const mainEntry = Object.entries(groups).find(([, g]) => g.isMain);
+      if (!mainEntry) { sendJson(503, { error: 'No group available' }); return; }
+      const [mainJid, mainGroup] = mainEntry;
+
+      const now = new Date().toISOString();
+      const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      createTask({
+        id: taskId,
+        group_folder: payload.group_folder || mainGroup.folder,
+        chat_jid: payload.chat_jid || mainJid,
+        prompt: payload.prompt,
+        script: payload.script || null,
+        schedule_type: payload.schedule_type,
+        schedule_value: payload.schedule_value,
+        context_mode: 'isolated',
+        next_run: now,
+        status: 'active',
+        created_at: now,
+      });
+      const task = getTaskById(taskId);
+      logger.info({ taskId }, 'Task created via API');
+      sendJson(201, { task });
+      return;
+    }
+    // --- End Tasks API ---
 
     if (req.method !== 'POST' || url.pathname !== '/chat') {
       sendJson(404, { error: 'Not found' });
