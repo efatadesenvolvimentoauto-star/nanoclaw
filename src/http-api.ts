@@ -311,7 +311,12 @@ export function startHttpApi(options: {
       // Seed specialist memory if provided
       if (payload.initial_memory && groupFolder !== mainGroup.folder) {
         const projectRoot = process.cwd();
-        const claudeMdPath = path.join(projectRoot, 'groups', groupFolder, 'CLAUDE.md');
+        const claudeMdPath = path.join(
+          projectRoot,
+          'groups',
+          groupFolder,
+          'CLAUDE.md',
+        );
         try {
           fs.mkdirSync(path.dirname(claudeMdPath), { recursive: true });
           if (!fs.existsSync(claudeMdPath)) {
@@ -319,7 +324,10 @@ export function startHttpApi(options: {
             logger.info({ groupFolder }, 'Specialist CLAUDE.md initialized');
           }
         } catch (err) {
-          logger.error({ err, groupFolder }, 'Failed to write specialist CLAUDE.md');
+          logger.error(
+            { err, groupFolder },
+            'Failed to write specialist CLAUDE.md',
+          );
         }
       }
 
@@ -500,6 +508,11 @@ export function startHttpApi(options: {
                 : JSON.stringify(result.result);
             const text = raw
               .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+              .replace(/<execute_bash>[\s\S]*?<\/execute_bash>/g, '')
+              .replace(/<read_file>[\s\S]*?<\/read_file>/g, '')
+              .replace(/<write_file>[\s\S]*?<\/write_file>/g, '')
+              .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '')
+              .replace(/\n{3,}/g, '\n\n')
               .trim();
             if (text) {
               responseText += (responseText ? '\n' : '') + text;
