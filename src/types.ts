@@ -59,6 +59,7 @@ export interface NewMessage {
 
 export interface ScheduledTask {
   id: string;
+  name?: string | null;
   group_folder: string;
   chat_jid: string;
   prompt: string;

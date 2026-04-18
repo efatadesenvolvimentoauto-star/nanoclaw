@@ -100,6 +100,13 @@ function createSchema(database: Database.Database): void {
     /* column already exists */
   }
 
+  // Add name column if it doesn't exist (migration for existing DBs)
+  try {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN name TEXT`);
+  } catch {
+    /* column already exists */
+  }
+
   // Add is_bot_message column if it doesn't exist (migration for existing DBs)
   try {
     database.exec(
@@ -419,11 +426,12 @@ export function createTask(
 ): void {
   db.prepare(
     `
-    INSERT INTO scheduled_tasks (id, group_folder, chat_jid, prompt, script, schedule_type, schedule_value, context_mode, next_run, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO scheduled_tasks (id, name, group_folder, chat_jid, prompt, script, schedule_type, schedule_value, context_mode, next_run, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
   ).run(
     task.id,
+    task.name || null,
     task.group_folder,
     task.chat_jid,
     task.prompt,
@@ -557,10 +565,7 @@ export function logTaskRun(log: TaskRunLog): void {
   );
 }
 
-export function getTaskRunLogs(
-  taskId: string,
-  limit = 20,
-): TaskRunLog[] {
+export function getTaskRunLogs(taskId: string, limit = 20): TaskRunLog[] {
   return db
     .prepare(
       `SELECT * FROM task_run_logs WHERE task_id = ?

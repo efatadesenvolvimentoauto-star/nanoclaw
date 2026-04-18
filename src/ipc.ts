@@ -173,6 +173,7 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    initial_memory?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -256,8 +257,28 @@ export async function processTaskIpc(
           data.context_mode === 'group' || data.context_mode === 'isolated'
             ? data.context_mode
             : 'isolated';
+        // Seed specialist memory if Atlas provided initial knowledge
+        if (data.initial_memory && targetFolder !== sourceGroup) {
+          const claudeMdPath = path.join(
+            process.cwd(),
+            'groups',
+            targetFolder,
+            'CLAUDE.md',
+          );
+          try {
+            fs.mkdirSync(path.dirname(claudeMdPath), { recursive: true });
+            if (!fs.existsSync(claudeMdPath)) {
+              fs.writeFileSync(claudeMdPath, data.initial_memory, 'utf-8');
+              logger.info({ targetFolder }, 'Specialist CLAUDE.md initialized via IPC');
+            }
+          } catch (err) {
+            logger.error({ err, targetFolder }, 'Failed to write specialist CLAUDE.md');
+          }
+        }
+
         createTask({
           id: taskId,
+          name: data.name || null,
           group_folder: targetFolder,
           chat_jid: targetJid,
           prompt: data.prompt,

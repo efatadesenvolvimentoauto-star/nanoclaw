@@ -227,7 +227,10 @@ export function startHttpApi(options: {
 
       if (req.method === 'GET') {
         const task = getTaskById(taskId);
-        if (!task) { sendJson(404, { error: 'Task not found' }); return; }
+        if (!task) {
+          sendJson(404, { error: 'Task not found' });
+          return;
+        }
         const logs = getTaskRunLogs(taskId, 20);
         sendJson(200, { task, logs });
         return;
@@ -235,10 +238,17 @@ export function startHttpApi(options: {
 
       if (req.method === 'PUT') {
         let payload: Partial<import('./types.js').ScheduledTask>;
-        try { payload = JSON.parse(await readBody(req)); }
-        catch { sendJson(400, { error: 'Invalid JSON' }); return; }
+        try {
+          payload = JSON.parse(await readBody(req));
+        } catch {
+          sendJson(400, { error: 'Invalid JSON' });
+          return;
+        }
         const task = getTaskById(taskId);
-        if (!task) { sendJson(404, { error: 'Task not found' }); return; }
+        if (!task) {
+          sendJson(404, { error: 'Task not found' });
+          return;
+        }
         updateTask(taskId, payload);
         sendJson(200, { ok: true, task: getTaskById(taskId) });
         return;
@@ -246,7 +256,10 @@ export function startHttpApi(options: {
 
       if (req.method === 'DELETE') {
         const task = getTaskById(taskId);
-        if (!task) { sendJson(404, { error: 'Task not found' }); return; }
+        if (!task) {
+          sendJson(404, { error: 'Task not found' });
+          return;
+        }
         deleteTask(taskId);
         logger.info({ taskId }, 'Task deleted via API');
         sendJson(200, { ok: true });
@@ -256,31 +269,64 @@ export function startHttpApi(options: {
 
     if (url.pathname === '/tasks' && req.method === 'POST') {
       let payload: {
+        name?: string;
         prompt: string;
         schedule_type: 'cron' | 'interval' | 'once';
         schedule_value: string;
         group_folder?: string;
         chat_jid?: string;
         script?: string;
+        initial_memory?: string;
       };
-      try { payload = JSON.parse(await readBody(req)); }
-      catch { sendJson(400, { error: 'Invalid JSON' }); return; }
+      try {
+        payload = JSON.parse(await readBody(req));
+      } catch {
+        sendJson(400, { error: 'Invalid JSON' });
+        return;
+      }
 
-      if (!payload.prompt || !payload.schedule_type || !payload.schedule_value) {
-        sendJson(400, { error: 'Missing prompt, schedule_type or schedule_value' });
+      if (
+        !payload.prompt ||
+        !payload.schedule_type ||
+        !payload.schedule_value
+      ) {
+        sendJson(400, {
+          error: 'Missing prompt, schedule_type or schedule_value',
+        });
         return;
       }
 
       const groups = options.registeredGroups();
       const mainEntry = Object.entries(groups).find(([, g]) => g.isMain);
-      if (!mainEntry) { sendJson(503, { error: 'No group available' }); return; }
+      if (!mainEntry) {
+        sendJson(503, { error: 'No group available' });
+        return;
+      }
       const [mainJid, mainGroup] = mainEntry;
 
       const now = new Date().toISOString();
       const taskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const groupFolder = payload.group_folder || mainGroup.folder;
+
+      // Seed specialist memory if provided
+      if (payload.initial_memory && groupFolder !== mainGroup.folder) {
+        const projectRoot = process.cwd();
+        const claudeMdPath = path.join(projectRoot, 'groups', groupFolder, 'CLAUDE.md');
+        try {
+          fs.mkdirSync(path.dirname(claudeMdPath), { recursive: true });
+          if (!fs.existsSync(claudeMdPath)) {
+            fs.writeFileSync(claudeMdPath, payload.initial_memory, 'utf-8');
+            logger.info({ groupFolder }, 'Specialist CLAUDE.md initialized');
+          }
+        } catch (err) {
+          logger.error({ err, groupFolder }, 'Failed to write specialist CLAUDE.md');
+        }
+      }
+
       createTask({
         id: taskId,
-        group_folder: payload.group_folder || mainGroup.folder,
+        name: payload.name || null,
+        group_folder: groupFolder,
         chat_jid: payload.chat_jid || mainJid,
         prompt: payload.prompt,
         script: payload.script || null,
@@ -292,7 +338,7 @@ export function startHttpApi(options: {
         created_at: now,
       });
       const task = getTaskById(taskId);
-      logger.info({ taskId }, 'Task created via API');
+      logger.info({ taskId, name: payload.name }, 'Task created via API');
       sendJson(201, { task });
       return;
     }
@@ -303,7 +349,12 @@ export function startHttpApi(options: {
       return;
     }
 
-    let body: { userId?: string; message?: string; senderName?: string };
+    let body: {
+      userId?: string;
+      message?: string;
+      senderName?: string;
+      groupFolder?: string;
+    };
     try {
       body = JSON.parse(await readBody(req));
     } catch {
@@ -311,46 +362,95 @@ export function startHttpApi(options: {
       return;
     }
 
-    const { userId, message, senderName } = body;
+    const { userId, message, senderName, groupFolder: targetFolder } = body;
     if (!userId || !message) {
       sendJson(400, { error: 'Missing userId or message' });
       return;
     }
 
-    // Find the main group to use as execution context
+    // Find the main group to use as fallback / Atlas context
     const groups = options.registeredGroups();
     const mainEntry = Object.entries(groups).find(([, g]) => g.isMain);
     if (!mainEntry) {
       sendJson(503, { error: 'Atlas unavailable' });
       return;
     }
-    const [, group] = mainEntry;
+    const [mainJid, mainGroup] = mainEntry;
+
+    // Route to specialist if groupFolder provided, otherwise Atlas (main)
+    const isSpecialist = !!targetFolder && targetFolder !== mainGroup.folder;
+    const group: RegisteredGroup = isSpecialist
+      ? {
+          folder: targetFolder!,
+          name: targetFolder!,
+          trigger: '',
+          added_at: new Date().toISOString(),
+          requiresTrigger: false,
+          isMain: false,
+        }
+      : mainGroup;
+    const chatJid = isSpecialist ? `${targetFolder}@specialist` : EFATA_WEB_JID;
 
     const displayName = senderName || userId;
     const sessionId = options.sessions()[group.folder];
 
-    // Inject recent messages from all registered chats so Atlas has
-    // full cross-channel context (WhatsApp, other groups, etc.)
-    const allGroups = options.registeredGroups();
-    const contextParts: string[] = [];
-    for (const [jid, g] of Object.entries(allGroups)) {
-      const recent = getMessagesSince(jid, '', options.assistantName, 30);
-      if (recent.length > 0) {
-        const formatted = formatMessages(recent, options.timezone);
-        contextParts.push(`[Histórico recente — ${g.name}]:\n${formatted}`);
+    let prompt: string;
+    if (isSpecialist) {
+      // Specialist chat: no cross-channel injection, just direct message
+      prompt = `[${displayName} via Efata Web]: ${message}`;
+    } else {
+      // Atlas: inject recent messages from all registered chats for full context
+      const allGroups = options.registeredGroups();
+      const contextParts: string[] = [];
+      for (const [jid, g] of Object.entries(allGroups)) {
+        const recent = getMessagesSince(jid, '', options.assistantName, 30);
+        if (recent.length > 0) {
+          const formatted = formatMessages(recent, options.timezone);
+          contextParts.push(`[Histórico recente — ${g.name}]:\n${formatted}`);
+        }
       }
+
+      // Inject specialist CLAUDE.md summaries so Atlas knows what each specialist knows
+      const projectRoot = process.cwd();
+      const specialistParts: string[] = [];
+      const allTasks = getAllTasks();
+      const specialistFolders = [
+        ...new Set(
+          allTasks
+            .filter((t) => t.group_folder !== mainGroup.folder)
+            .map((t) => t.group_folder),
+        ),
+      ];
+      for (const folder of specialistFolders) {
+        const claudeMd = path.join(projectRoot, 'groups', folder, 'CLAUDE.md');
+        if (fs.existsSync(claudeMd)) {
+          const content = fs.readFileSync(claudeMd, 'utf-8').trim();
+          const taskName =
+            allTasks.find((t) => t.group_folder === folder)?.name || folder;
+          if (content) {
+            specialistParts.push(
+              `[Especialista: ${taskName}]:\n${content.slice(0, 800)}`,
+            );
+          }
+        }
+      }
+
+      const contextBlock =
+        contextParts.length > 0
+          ? `${contextParts.join('\n\n')}\n\n[Mensagem atual via Efata Web — ${displayName}]:\n`
+          : `[${displayName} via Efata Web]: `;
+      const specialistBlock =
+        specialistParts.length > 0
+          ? `\n\n[Conhecimento dos especialistas]:\n${specialistParts.join('\n\n')}`
+          : '';
+      prompt = `${contextBlock}${message}${specialistBlock}`;
     }
-    const contextBlock =
-      contextParts.length > 0
-        ? `${contextParts.join('\n\n')}\n\n[Mensagem atual via Efata Web — ${displayName}]:\n`
-        : `[${displayName} via Efata Web]: `;
-    const prompt = `${contextBlock}${message}`;
 
     // Keep task snapshot fresh so the agent can see scheduled tasks
     const tasks = getAllTasks();
     writeTasksSnapshot(
       group.folder,
-      true,
+      !isSpecialist,
       tasks.map((t) => ({
         id: t.id,
         groupFolder: t.group_folder,
@@ -367,8 +467,8 @@ export function startHttpApi(options: {
       prompt,
       sessionId,
       groupFolder: group.folder,
-      chatJid: EFATA_WEB_JID,
-      isMain: true,
+      chatJid,
+      isMain: !isSpecialist,
       assistantName: options.assistantName,
       senderPhone: userId,
       ownerPhone: options.ownerPhone,
