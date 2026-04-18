@@ -9,9 +9,12 @@
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const qrcode = require('qrcode-terminal') as { generate: (text: string, opts: { small: boolean }) => void };
 import readline from 'readline';
+import { createRequire as _createRequireForQR } from 'module';
+const _reqQR = _createRequireForQR(import.meta.url);
+const qrcode = _reqQR('qrcode-terminal') as {
+  generate: (text: string, opts: { small: boolean }) => void;
+};
 
 import {
   makeWASocket,
