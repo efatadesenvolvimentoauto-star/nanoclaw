@@ -48,6 +48,7 @@ export interface ContainerInput {
   script?: string;
   senderPhone?: string;
   ownerPhone?: string;
+  ownerLid?: string;
 }
 
 export interface ContainerOutput {
@@ -222,7 +223,10 @@ function buildVolumeMounts(
       fs.readdirSync(agentRunnerSrc).some((file) => {
         const src = path.join(agentRunnerSrc, file);
         const cached = path.join(groupAgentRunnerDir, file);
-        return !fs.existsSync(cached) || fs.statSync(src).mtimeMs > fs.statSync(cached).mtimeMs;
+        return (
+          !fs.existsSync(cached) ||
+          fs.statSync(src).mtimeMs > fs.statSync(cached).mtimeMs
+        );
       });
     if (needsCopy) {
       fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });

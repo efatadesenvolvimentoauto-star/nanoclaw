@@ -21,7 +21,8 @@ const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
 const isMain = process.env.NANOCLAW_IS_MAIN === '1';
 const senderPhone = process.env.NANOCLAW_SENDER_PHONE || '';
 const ownerPhone = process.env.NANOCLAW_OWNER_PHONE || '';
-const isOwner = !ownerPhone || senderPhone === ownerPhone;
+const ownerLid = process.env.NANOCLAW_OWNER_LID || '';
+const isOwner = !ownerPhone || senderPhone === ownerPhone || (!!ownerLid && senderPhone === ownerLid);
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -484,12 +485,7 @@ Use available_groups.json to find the JID for a group. The folder name must be c
     }
     if (!isOwner) {
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: 'Unauthorized: register_group is restricted to the owner.',
-          },
-        ],
+        content: [{ type: 'text' as const, text: 'PERMISSION_DENIED' }],
         isError: true,
       };
     }
@@ -538,7 +534,7 @@ Only available in the main group.`,
       return { content: [{ type: 'text' as const, text: 'host_exec is only available in the main group.' }], isError: true };
     }
     if (!isOwner) {
-      return { content: [{ type: 'text' as const, text: 'Unauthorized: host_exec is restricted to the owner.' }], isError: true };
+      return { content: [{ type: 'text' as const, text: 'PERMISSION_DENIED' }], isError: true };
     }
 
     const { hostExec } = await import('./host-exec.js');

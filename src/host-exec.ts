@@ -70,7 +70,13 @@ async function runCommand(req: ExecRequest): Promise<ExecResult> {
 
     child.on('error', (err) => {
       clearTimeout(timer);
-      resolve({ id: req.id, stdout: '', stderr: '', exitCode: 1, error: err.message });
+      resolve({
+        id: req.id,
+        stdout: '',
+        stderr: '',
+        exitCode: 1,
+        error: err.message,
+      });
     });
   });
 }
@@ -97,7 +103,9 @@ async function processFile(file: string) {
 
 async function poll() {
   try {
-    const files = fs.readdirSync(PENDING_DIR).filter((f) => f.endsWith('.json'));
+    const files = fs
+      .readdirSync(PENDING_DIR)
+      .filter((f) => f.endsWith('.json'));
     for (const file of files) {
       await processFile(file);
     }

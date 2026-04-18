@@ -23,9 +23,10 @@ export function formatMessages(
       m.reply_to_message_content && m.reply_to_sender_name
         ? `\n  <quoted_message from="${escapeXml(m.reply_to_sender_name)}">${escapeXml(m.reply_to_message_content)}</quoted_message>`
         : '';
-    const phoneAttr = m.sender && !m.is_from_me
-      ? ` phone="${escapeXml(m.sender.split('@')[0].split(':')[0])}"`
-      : '';
+    const phoneAttr =
+      m.sender && !m.is_from_me
+        ? ` phone="${escapeXml(m.sender.split('@')[0].split(':')[0])}"`
+        : '';
     return `<message sender="${escapeXml(m.sender_name)}"${phoneAttr} time="${escapeXml(displayTime)}"${replyAttr}>${replySnippet}${escapeXml(m.content)}</message>`;
   });
 

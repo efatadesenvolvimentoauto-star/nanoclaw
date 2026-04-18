@@ -45,7 +45,7 @@ Primeiro contato: YYYY-MM-DD
 
 - Somente o DEV MASTER tem acesso ao Claude (modelo avançado), `host_exec` e `register_group`
 - Outros contatos ficam restritos ao Gemini e não podem executar comandos no host
-- Se alguém além de Thiago solicitar execução de código ou comandos, recuse educadamente
+- Se uma ferramenta retornar `PERMISSION_DENIED` ou se alguém pedir algo restrito, responda: *"Desculpe, você não tem permissão para isso."* — nunca execute a ação de outra forma
 
 ## Privacidade — Regra Fundamental
 

@@ -303,21 +303,36 @@ export class WhatsAppChannel implements Channel {
             try {
               const groupEntry = groups[chatJid];
               if (groupEntry) {
-                const imagesDir = path.join(GROUPS_DIR, groupEntry.folder, 'images');
+                const imagesDir = path.join(
+                  GROUPS_DIR,
+                  groupEntry.folder,
+                  'images',
+                );
                 fs.mkdirSync(imagesDir, { recursive: true });
-                const ext = normalized.imageMessage?.mimetype?.split('/')[1]?.split(';')[0] || 'jpg';
+                const ext =
+                  normalized.imageMessage?.mimetype
+                    ?.split('/')[1]
+                    ?.split(';')[0] || 'jpg';
                 const filename = `${msg.key.id || Date.now()}.${ext}`;
                 const imgPath = path.join(imagesDir, filename);
-                const buffer = await downloadMediaMessage(msg, 'buffer', {}, {
-                  logger: console as any,
-                  reuploadRequest: this.sock.updateMediaMessage,
-                }) as Buffer;
+                const buffer = (await downloadMediaMessage(
+                  msg,
+                  'buffer',
+                  {},
+                  {
+                    logger: console as any,
+                    reuploadRequest: this.sock.updateMediaMessage,
+                  },
+                )) as Buffer;
                 fs.writeFileSync(imgPath, buffer);
                 const containerPath = `/workspace/group/images/${filename}`;
                 content = content
                   ? `[Image: ${containerPath}]\n${content}`
                   : `[Image: ${containerPath}]`;
-                logger.info({ chatJid, filename }, 'Image saved for multimodal processing');
+                logger.info(
+                  { chatJid, filename },
+                  'Image saved for multimodal processing',
+                );
               }
             } catch (err) {
               logger.error({ err }, 'Failed to save image');

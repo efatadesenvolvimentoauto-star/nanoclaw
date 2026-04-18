@@ -36,6 +36,7 @@ interface ContainerInput {
   script?: string;
   senderPhone?: string;
   ownerPhone?: string;
+  ownerLid?: string;
 }
 
 interface ContainerOutput {
@@ -488,6 +489,7 @@ async function runQuery(
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
             NANOCLAW_SENDER_PHONE: containerInput.senderPhone || '',
             NANOCLAW_OWNER_PHONE: containerInput.ownerPhone || '',
+            NANOCLAW_OWNER_LID: containerInput.ownerLid || '',
           },
         },
       },
@@ -696,16 +698,23 @@ async function main(): Promise<void> {
 
   // DEV MASTER: only the owner phone can use Claude (host_exec, complex tasks)
   const ownerPhone = containerInput.ownerPhone || '';
+  const ownerLid = containerInput.ownerLid || '';
   const senderPhone = containerInput.senderPhone || '';
-  const isOwner = !ownerPhone || senderPhone === ownerPhone;
+  const isOwner = !ownerPhone || senderPhone === ownerPhone || (!!ownerLid && senderPhone === ownerLid);
 
   // Gemini loop: non-owners are always handled by Gemini (no Claude escalation)
   if (!containerInput.isScheduledTask && process.env.GEMINI_API_KEY && (!needsClaude(prompt) || !isOwner)) {
     log(`Routing to Gemini (${isOwner ? 'simple chat' : 'non-owner'})`);
     let geminiPrompt = prompt;
     while (true) {
-      const reply = await runGeminiChat(geminiPrompt, containerInput.assistantName);
-      writeOutput({ status: 'success', result: reply });
+      try {
+        const reply = await runGeminiChat(geminiPrompt, containerInput.assistantName);
+        writeOutput({ status: 'success', result: reply || 'Não consegui processar sua mensagem agora, tente novamente.' });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`Gemini error: ${msg}`);
+        writeOutput({ status: 'success', result: 'Ocorreu um erro temporário. Tente novamente em instantes.' });
+      }
       const next = await waitForIpcMessage();
       if (next === null) return;
       if (isOwner && needsClaude(next)) {

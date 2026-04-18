@@ -89,6 +89,27 @@ function buildUserParts(prompt: string): GeminiPart[] {
   return parts;
 }
 
+const RETRY_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
+
+async function fetchGemini(body: object, apiKey: string): Promise<Response> {
+  let lastResponse: Response | null = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (response.status !== 503 && response.status !== 429) return response;
+    lastResponse = response;
+    if (attempt < RETRY_DELAYS_MS.length) {
+      const delay = RETRY_DELAYS_MS[attempt];
+      console.error(`[gemini] ${response.status} — retrying in ${delay}ms (attempt ${attempt + 1}/${RETRY_DELAYS_MS.length})`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  return lastResponse!;
+}
+
 export async function runGeminiChat(
   prompt: string,
   assistantName = 'Atlas',
@@ -106,14 +127,13 @@ export async function runGeminiChat(
     generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
   };
 
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const response = await fetchGemini(body, apiKey);
 
   if (!response.ok) {
     const err = await response.text();
+    if (response.status === 503 || response.status === 429) {
+      return 'Estou com alta demanda agora, tente novamente em alguns segundos.';
+    }
     throw new Error(`Gemini API error ${response.status}: ${err}`);
   }
 
